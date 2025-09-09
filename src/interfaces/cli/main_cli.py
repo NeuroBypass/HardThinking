@@ -52,38 +52,38 @@ class Colors:
 
 class CLIInterface:
     """Interface CLI principal"""
-    
+
     def __init__(self):
         self.config = get_config()
         self._setup_dependencies()
-    
+
     def _setup_dependencies(self):
         """Configura dependências da arquitetura hexagonal"""
-        # Adapters
-        self.filesystem = LocalFileSystemAdapter(str(self.config.directories.project_root))
+        # Adapters: use data directory as base for filesystem operations so paths are relative to the data root
+        self.filesystem = LocalFileSystemAdapter(str(self.config.directories.data_dir))
         self.ml_adapter = TensorFlowMLAdapter(self.config)
         self.logger = PythonLoggingAdapter(str(self.config.directories.logs_dir))
-        
+
         # Repositórios
         self.eeg_repository = FileSystemEEGRepository(
-            str(self.config.directories.data_dir), 
+            str(self.config.directories.data_dir),
             self.filesystem
         )
         self.subject_repository = FileSystemSubjectRepository(
             str(self.config.directories.data_dir),
             self.filesystem
         )
-        
+
         # Importa repositório de modelos
         from ...infrastructure.repositories.model_repository_impl import FileSystemModelRepository
         self.model_repository = FileSystemModelRepository(
             str(self.config.directories.models_dir),
             self.filesystem
         )
-        
+
         # Notification stub (implementar se necessário)
         self.notification_adapter = NotificationStub()
-        
+
         # Casos de uso
         self.train_model_use_case = TrainModelUseCase(
             self.eeg_repository,
@@ -93,7 +93,7 @@ class CLIInterface:
             self.logger,
             self.notification_adapter
         )
-    
+
     def print_banner(self):
         """Exibe o banner do sistema"""
         banner = f"""
@@ -112,7 +112,7 @@ class CLIInterface:
 ╚═══════════════════════════════════════════════════════════════════════════════╝{Colors.ENDC}
 """
         print(banner)
-    
+
     def show_main_menu(self):
         """Exibe menu principal"""
         menu = f"""
@@ -146,7 +146,7 @@ class CLIInterface:
 {Colors.BOLD}═══════════════════════════════════════════════════════════════════════════════{Colors.ENDC}
 """
         print(menu)
-    
+
     def get_available_subjects(self) -> List[str]:
         """Obtém lista de sujeitos disponíveis"""
         try:
@@ -154,23 +154,23 @@ class CLIInterface:
         except Exception as e:
             self.logger.log_error("Erro ao listar sujeitos", e)
             return []
-    
+
     def select_subjects(self, multi_select: bool = False) -> List[str]:
         """Interface para seleção de sujeitos"""
         subjects = self.get_available_subjects()
-        
+
         if not subjects:
             print(f"{Colors.RED}❌ Nenhum sujeito encontrado nos dados.{Colors.ENDC}")
             return []
-        
+
         print(f"\n{Colors.CYAN}📋 Sujeitos disponíveis:{Colors.ENDC}")
         for i, subject in enumerate(subjects, 1):
             print(f"  {Colors.GREEN}{i}.{Colors.ENDC} {subject}")
-        
+
         if multi_select:
             print(f"\n{Colors.YELLOW}💡 Digite os números dos sujeitos separados por vírgula (ex: 1,2,3):{Colors.ENDC}")
             choice = input("Seleção: ").strip()
-            
+
             try:
                 indices = [int(x.strip()) - 1 for x in choice.split(',')]
                 selected = [subjects[i] for i in indices if 0 <= i < len(subjects)]
@@ -186,20 +186,20 @@ class CLIInterface:
                     return [subjects[index]]
             except:
                 pass
-            
+
             print(f"{Colors.RED}❌ Seleção inválida.{Colors.ENDC}")
             return []
-    
+
     def train_single_subject_model(self):
         """Treinar modelo para sujeito único"""
         print(f"\n{Colors.BOLD}🎯 Treinamento para Sujeito Único{Colors.ENDC}")
-        
+
         subjects = self.select_subjects(multi_select=False)
         if not subjects:
             return
-        
+
         subject_id = subjects[0]
-        
+
         request = TrainModelRequest(
             subject_ids=[subject_id],
             strategy=TrainingStrategy.SINGLE_SUBJECT,
@@ -210,32 +210,32 @@ class CLIInterface:
                 'learning_rate': 0.001
             }
         )
-        
+
         print(f"\n{Colors.CYAN}🚀 Iniciando treinamento para {subject_id}...{Colors.ENDC}")
-        
+
         response = self.train_model_use_case.execute(request)
-        
+
         if response.success:
             print(f"\n{Colors.GREEN}✅ Treinamento concluído com sucesso!{Colors.ENDC}")
             print(f"   Acurácia: {response.validation_result.validation_performance.accuracy:.3f}")
             print(f"   F1-Score: {response.validation_result.validation_performance.f1_score:.3f}")
         else:
             print(f"\n{Colors.RED}❌ Erro no treinamento: {response.error_message}{Colors.ENDC}")
-    
+
     def train_cross_validation_model(self):
         """Treinar com validação cruzada"""
         print(f"\n{Colors.BOLD}🔄 Treinamento com Validação Cruzada{Colors.ENDC}")
-        
+
         subjects = self.select_subjects(multi_select=True)
         if not subjects:
             return
-        
+
         cv_folds = input("Número de folds (padrão 5): ").strip()
         try:
             cv_folds = int(cv_folds) if cv_folds else 5
         except:
             cv_folds = 5
-        
+
         request = TrainModelRequest(
             subject_ids=subjects,
             strategy=TrainingStrategy.CROSS_VALIDATION,
@@ -247,11 +247,11 @@ class CLIInterface:
                 'learning_rate': 0.001
             }
         )
-        
+
         print(f"\n{Colors.CYAN}🚀 Iniciando validação cruzada ({cv_folds} folds)...{Colors.ENDC}")
-        
+
         response = self.train_model_use_case.execute(request)
-        
+
         if response.success:
             print(f"\n{Colors.GREEN}✅ Validação cruzada concluída!{Colors.ENDC}")
             print(f"   Acurácia média: {response.validation_result.validation_performance.accuracy:.3f}")
@@ -261,23 +261,23 @@ class CLIInterface:
                 print(f"   Desvio padrão: {np.std(scores):.3f}")
         else:
             print(f"\n{Colors.RED}❌ Erro na validação: {response.error_message}{Colors.ENDC}")
-    
+
     def show_system_info(self):
         """Mostra informações do sistema"""
         print(f"\n{Colors.BOLD}ℹ️  Informações do Sistema{Colors.ENDC}")
-        
+
         info = self.config.get_system_info()
-        
+
         for key, value in info.items():
             print(f"  {Colors.CYAN}{key.replace('_', ' ').title()}:{Colors.ENDC} {value}")
-        
+
         # Informações adicionais
         subjects = self.get_available_subjects()
         print(f"  {Colors.CYAN}Sujeitos Disponíveis:{Colors.ENDC} {len(subjects)}")
-        
+
         if subjects:
             print(f"  {Colors.CYAN}Lista de Sujeitos:{Colors.ENDC} {', '.join(subjects)}")
-    
+
     def run(self):
         """Executa a interface CLI"""
         if self.config.cli.banner_enabled:
@@ -335,10 +335,10 @@ class NotificationStub:
     """Stub para notificações"""
     def notify_training_started(self, model_id: str, subject_id: str):
         pass
-    
+
     def notify_training_completed(self, model_id: str, metrics: Dict[str, float]):
         pass
-    
+
     def notify_training_failed(self, model_id: str, error: str):
         pass
 

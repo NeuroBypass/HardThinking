@@ -106,14 +106,31 @@ class FileSystemEEGRepository(EEGDataRepository):
         try:
             # Lista arquivos de metadados
             metadata_files = self.filesystem.list_files("metadata", "*.json")
-            
             for metadata_file in metadata_files:
                 metadata = self.filesystem.read_json_file(metadata_file)
-                
+
                 if metadata.get('subject_id') == subject_id:
                     eeg_data = self.get_eeg_data_by_id(metadata['id'])
                     if eeg_data:
                         eeg_data_list.append(eeg_data)
+
+            # Se nenhum metadado foi encontrado, provavelmente temos apenas CSVs brutos
+            # (formato resources/eeg_data/SXXX/*.csv). Nesse caso, procura arquivos CSV
+            # em raw_data/<subject_id> e em <subject_id> e carrega diretamente.
+            if not eeg_data_list:
+                # Tentativa 1: raw_data/<subject_id>
+                csv_files = self.filesystem.list_files(f"raw_data/{subject_id}", "*.csv")
+                for csv_file in csv_files:
+                    eeg = self.load_from_csv(csv_file, subject_id)
+                    if eeg:
+                        eeg_data_list.append(eeg)
+
+                # Tentativa 2: diretório direto do sujeito under data root (ex: resources/eeg_data/S001)
+                csv_files = self.filesystem.list_files(f"{subject_id}", "*.csv")
+                for csv_file in csv_files:
+                    eeg = self.load_from_csv(csv_file, subject_id)
+                    if eeg:
+                        eeg_data_list.append(eeg)
             
             return eeg_data_list
             
@@ -126,12 +143,21 @@ class FileSystemEEGRepository(EEGDataRepository):
         subjects = set()
         
         try:
-            # Lista diretórios de dados brutos
+            # Primeira tentativa: estrutura com subdiretório 'raw_data/<subject>' (compatibilidade)
             raw_data_dirs = self.filesystem.list_directories("raw_data")
-            
-            for dir_path in raw_data_dirs:
-                subject_id = Path(dir_path).name
-                subjects.add(subject_id)
+            if raw_data_dirs:
+                for dir_path in raw_data_dirs:
+                    subject_id = Path(dir_path).name
+                    subjects.add(subject_id)
+            else:
+                # Segunda tentativa: diretórios direto no data root (ex: resources/eeg_data/S001/...)
+                root_dirs = self.filesystem.list_directories(".")
+                for dir_path in root_dirs:
+                    # Ignora metadados e outros diretórios conhecidos
+                    name = Path(dir_path).name
+                    if name.lower() in {"metadata", "subjects", "models", "logs", "results", "temp"}:
+                        continue
+                    subjects.add(name)
             
             return list(subjects)
             

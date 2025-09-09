@@ -100,7 +100,11 @@ class SystemConfiguration:
     
     def __init__(self, project_root: Optional[Path] = None):
         if project_root is None:
-            project_root = Path(__file__).parent.parent.parent
+            # project_root should be the repository/project folder (two levels above src)
+            # original code used three levels which pointed to the parent of the project when
+            # the repository is nested under another folder. Use two levels to locate the
+            # HardThinking project root correctly.
+            project_root = Path(__file__).parent.parent
         
         self.data = DataConfiguration()
         self.model = ModelConfiguration()
@@ -109,9 +113,16 @@ class SystemConfiguration:
         self.cli = CLIConfiguration()
         
         # Configuração de diretórios
+        # Define diretórios. Preferência: se existir, usa resources/eeg_data (caminho relativo ao projeto),
+        # caso contrário usa o diretório 'data' para compatibilidade com instalações legadas.
+        preferred_data_dir = project_root / "resources" / "eeg_data"
+        default_data_dir = project_root / "data"
+
+        data_dir = preferred_data_dir if preferred_data_dir.exists() else default_data_dir
+
         self.directories = DirectoryConfiguration(
             project_root=project_root,
-            data_dir=project_root / "data",
+            data_dir=data_dir,
             models_dir=project_root / "models",
             logs_dir=project_root / "logs",
             results_dir=project_root / "results",

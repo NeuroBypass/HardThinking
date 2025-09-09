@@ -174,22 +174,19 @@ class TrainModelUseCase:
     
     def _prepare_ml_data(self, segments: List[EEGSegment]) -> tuple:
         """Prepara dados para treinamento de ML"""
-        X = []
-        y = []
-        
         # Mapeamento de classes
         class_map = {
             MotorImageryClass.LEFT: 0,
             MotorImageryClass.RIGHT: 1
         }
-        
-        for segment in segments:
-            # Achata os dados do segmento
-            features = segment.data.flatten()
-            X.append(features)
-            y.append(class_map[segment.label])
-        
-        return np.array(X), np.array(y)
+
+        # Esperamos que cada segmento tenha forma (window_size, channels).
+        # Empacotamos como um array 3D (n_samples, window_size, channels) para compatibilidade
+        # com modelos Keras que recebem entrada (batch, timesteps, channels).
+        X = np.stack([segment.data for segment in segments]).astype('float32')
+        y = np.array([class_map[segment.label] for segment in segments], dtype='int32')
+
+        return X, y
     
     def _train_single_subject(self, ml_model, X, y, model: Model, validation_split: float) -> ValidationResult:
         """Treina modelo para um único sujeito"""

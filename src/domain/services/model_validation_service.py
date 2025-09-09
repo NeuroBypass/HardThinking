@@ -86,18 +86,37 @@ class ModelValidationService:
                                test_size: float = 0.2) -> ValidationResult:
         """Valida modelo para um único sujeito"""
         from sklearn.model_selection import train_test_split
+        import numpy as _np
+        try:
+            import tensorflow as _tf
+        except Exception:
+            _tf = None
         
         # Divide dados
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=test_size, random_state=42, stratify=y
         )
         
-        # Treina modelo
-        model_func.fit(X_train, y_train)
-        
-        # Predições
-        y_train_pred = model_func.predict(X_train)
-        y_test_pred = model_func.predict(X_test)
+        # Se for um modelo Keras (tf.keras.Model), trate labels como categorical e use API Keras
+        if _tf is not None and isinstance(model_func, _tf.keras.Model):
+            # Converte labels para one-hot
+            num_classes = int(_np.max(y) + 1)
+            y_train_cat = _tf.keras.utils.to_categorical(y_train, num_classes=num_classes)
+            y_test_cat = _tf.keras.utils.to_categorical(y_test, num_classes=num_classes)
+
+            # Treina com poucas épocas para validação (config leve)
+            model_func.fit(X_train, y_train_cat, epochs=10, batch_size=32, verbose=0)
+
+            # Predições (retorna índices de classe)
+            y_train_pred = _np.argmax(model_func.predict(X_train, verbose=0), axis=1)
+            y_test_pred = _np.argmax(model_func.predict(X_test, verbose=0), axis=1)
+        else:
+            # Treina modelo (sklearn-like)
+            model_func.fit(X_train, y_train)
+
+            # Predições
+            y_train_pred = model_func.predict(X_train)
+            y_test_pred = model_func.predict(X_test)
         
         # Calcula métricas
         train_performance = self.validate_model_performance(y_train, y_train_pred)
